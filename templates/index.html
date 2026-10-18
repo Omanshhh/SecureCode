@@ -1,0 +1,218 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>SecureCode Workbench</title>
+  <meta name="description" content="Static analysis workbench for a C subset: tokens, AST, symbols, control flow and security findings.">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,700;12..96,800&family=Manrope:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;700&family=Space+Mono:wght@400;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='6' fill='%23b8551a'/%3E%3Ctext x='6' y='23' font-family='monospace' font-weight='700' font-size='18' fill='white'%3ES/%3C/text%3E%3C/svg%3E">
+</head>
+<body>
+  <header class="topbar">
+    <div class="wrap topbar-inner">
+      <div class="brand">
+        <span class="brand-mark">S/</span><span class="brand-name">SECURECODE</span>
+        <span class="brand-divider"></span>
+        <span class="brand-sub">Static analysis workbench</span>
+      </div>
+      <div class="topbar-right">
+        <button class="icon-btn" id="themeToggle" type="button" aria-label="Toggle dark mode" title="Toggle theme">
+          <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true"><path fill="currentColor" d="M12 3a9 9 0 1 0 9 9c0-.46-.04-.92-.1-1.36A5.5 5.5 0 0 1 13.36 3.1C12.92 3.04 12.46 3 12 3Z"/></svg>
+        </button>
+        <div class="engine" id="engineStatus" data-state="checking">
+          <span class="engine-dot"></span><span class="engine-label">Checking engine</span>
+        </div>
+      </div>
+    </div>
+  </header>
+
+  <main class="wrap">
+    <section class="hero">
+      <div>
+        <p class="eyebrow reveal">C / Security analysis</p>
+        <h1 class="reveal" style="--d:80ms">Inspect code.<br><span>Expose risk.</span></h1>
+      </div>
+      <p class="hero-copy reveal" style="--d:160ms">A focused workspace for tokenization, parsing, control-flow analysis, and actionable security findings.</p>
+    </section>
+
+    <section class="workspace reveal" style="--d:220ms">
+      <!-- Editor -->
+      <div class="card editor-card">
+        <div class="card-head">
+          <span class="file-name" id="fileName">INPUT.C</span>
+          <div class="head-tools">
+            <label class="sample-picker">
+              <span class="sr-only">Load sample</span>
+              <select id="sampleSelect">
+                <option value="">Load sample…</option>
+              </select>
+            </label>
+            <button class="ghost-btn" id="uploadBtn" type="button" title="Open a .c file">Open .c</button>
+            <input type="file" id="fileInput" accept=".c,.h,.txt" hidden>
+            <span class="tag">C subset</span>
+          </div>
+        </div>
+
+        <div class="editor" id="editor">
+          <div class="gutter" id="gutter" aria-hidden="true"></div>
+          <div class="code-area">
+            <pre class="highlight" id="highlight" aria-hidden="true"></pre>
+            <textarea id="source" spellcheck="false" autocomplete="off" autocapitalize="off" aria-label="C source code"></textarea>
+          </div>
+        </div>
+
+        <div class="card-foot">
+          <div class="hint"><kbd>Ctrl</kbd><kbd>Enter</kbd><span>to analyze</span></div>
+          <div class="foot-actions">
+            <button class="ghost-btn" id="clearBtn" type="button">Clear</button>
+            <button class="primary-btn" id="runBtn" type="button">
+              <span class="btn-label">Run analysis</span><span class="btn-icon">↵</span>
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Summary -->
+      <aside class="card summary-card" id="summary">
+        <p class="eyebrow">Scan summary</p>
+        <div class="score-row">
+          <div>
+            <div class="score" id="riskScore">—</div>
+            <div class="label">Risk score</div>
+          </div>
+          <svg class="gauge" viewBox="0 0 64 64" aria-hidden="true">
+            <circle cx="32" cy="32" r="27" class="gauge-track"/>
+            <circle cx="32" cy="32" r="27" class="gauge-fill" id="gaugeFill"/>
+          </svg>
+        </div>
+        <div class="rule"></div>
+        <div class="counts">
+          <div class="count high"><span id="countHigh">0</span><small>High</small></div>
+          <div class="count medium"><span id="countMedium">0</span><small>Medium</small></div>
+          <div class="count low"><span id="countLow">0</span><small>Low</small></div>
+        </div>
+        <div class="rule"></div>
+        <p class="summary-text" id="summaryText">Run an analysis to see results.</p>
+
+        <ol class="stages" id="stages">
+          <li data-stage="lexer">Lexer</li>
+          <li data-stage="parser">Parser · AST</li>
+          <li data-stage="semantic">Semantic · symbols</li>
+          <li data-stage="cfg">Control flow</li>
+          <li data-stage="rules">Data-flow · rules</li>
+        </ol>
+        <div class="summary-foot">
+          <span class="elapsed" id="elapsed"></span>
+          <button class="ghost-btn small" id="exportBtn" type="button" disabled>Export JSON</button>
+        </div>
+      </aside>
+    </section>
+
+    <div class="error-banner" id="errorBanner" hidden></div>
+
+    <!-- Results -->
+    <section class="card results reveal" style="--d:300ms">
+      <nav class="tabs" role="tablist" id="tabs">
+        <button role="tab" class="tab active" data-tab="findings" aria-selected="true">Findings <span class="badge" id="findingsBadge">0</span></button>
+        <button role="tab" class="tab" data-tab="tokens" aria-selected="false">Token stream</button>
+        <button role="tab" class="tab" data-tab="ast" aria-selected="false">AST</button>
+        <button role="tab" class="tab" data-tab="symbols" aria-selected="false">Symbols</button>
+        <button role="tab" class="tab" data-tab="cfg" aria-selected="false">Control flow</button>
+        <span class="tab-indicator" id="tabIndicator"></span>
+      </nav>
+
+      <div class="panel active" data-panel="findings">
+        <div class="panel-tools">
+          <div class="chips" id="severityChips">
+            <button class="chip active" data-sev="ALL">All</button>
+            <button class="chip" data-sev="HIGH">High</button>
+            <button class="chip" data-sev="MEDIUM">Medium</button>
+            <button class="chip" data-sev="LOW">Low</button>
+          </div>
+        </div>
+        <div class="table-wrap">
+          <table class="data findings-table">
+            <thead><tr><th>Severity</th><th>Finding</th><th>Line</th><th>Detail</th><th>Recommended fix</th></tr></thead>
+            <tbody id="findingsBody"></tbody>
+          </table>
+        </div>
+        <div class="semantic" id="semanticBlock" hidden>
+          <p class="eyebrow">Semantic diagnostics</p>
+          <ul id="semanticList"></ul>
+        </div>
+      </div>
+
+      <div class="panel" data-panel="tokens">
+        <div class="panel-tools">
+          <input class="search" id="tokenSearch" type="search" placeholder="Filter lexeme or type…">
+          <span class="muted" id="tokenCount"></span>
+        </div>
+        <div class="table-wrap scroll">
+          <table class="data mono-table">
+            <thead><tr><th>#</th><th>Type</th><th>Lexeme</th><th>Line:col</th></tr></thead>
+            <tbody id="tokensBody"></tbody>
+          </table>
+        </div>
+      </div>
+
+      <div class="panel" data-panel="ast">
+        <div class="panel-tools">
+          <div class="chips" id="astMode">
+            <button class="chip active" data-mode="tree">Tree</button>
+            <button class="chip" data-mode="text">Text</button>
+          </div>
+          <button class="ghost-btn small" id="astExpand" type="button">Expand all</button>
+          <button class="ghost-btn small" id="astCollapse" type="button">Collapse all</button>
+        </div>
+        <div class="ast-tree" id="astTree"></div>
+        <pre class="ast-text" id="astText" hidden></pre>
+      </div>
+
+      <div class="panel" data-panel="symbols">
+        <div class="table-wrap">
+          <table class="data mono-table">
+            <thead><tr><th>Name</th><th>Type</th><th>Scope</th><th>Line</th><th>State</th></tr></thead>
+            <tbody id="symbolsBody"></tbody>
+          </table>
+        </div>
+      </div>
+
+      <div class="panel" data-panel="cfg">
+        <div class="panel-tools">
+          <select id="cfgSelect" class="select"></select>
+          <div class="chips" id="cfgMode">
+            <button class="chip active" data-mode="graph">Graph</button>
+            <button class="chip" data-mode="blocks">Blocks</button>
+          </div>
+          <div class="legend">
+            <span class="lg normal">normal</span><span class="lg true">true</span><span class="lg false">false</span><span class="lg back">back</span>
+          </div>
+        </div>
+        <p class="edge-line" id="edgeLine"></p>
+        <div class="cfg-graph" id="cfgGraph"></div>
+        <div class="cfg-blocks" id="cfgBlocks" hidden></div>
+        <details class="dot">
+          <summary>DOT source <button class="ghost-btn small" id="copyDot" type="button">Copy</button></summary>
+          <pre id="dotSource"></pre>
+        </details>
+      </div>
+
+      <div class="empty" id="emptyState">Run an analysis to populate this view.</div>
+    </section>
+
+    <footer class="foot">
+      <span>SecureCode · Lexer → Parser → Semantic → CFG → Data-flow → Rules</span>
+      <span>Compiler Design project</span>
+    </footer>
+  </main>
+
+  <div class="toast" id="toast" role="status" aria-live="polite"></div>
+
+  <script src="https://cdn.jsdelivr.net/npm/@viz-js/viz@3.11.0/lib/viz-standalone.js" defer></script>
+  <script src="{{ url_for('static', filename='js/app.js') }}" defer></script>
+</body>
+</html>
