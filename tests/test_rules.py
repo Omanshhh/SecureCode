@@ -164,3 +164,35 @@ def test_a_broken_rule_does_not_kill_the_report():
     assert len(result["findings"]) == 4
     assert len(result["rule_errors"]) == 1
     assert result["rule_errors"][0]["rule_id"] == "BOOM"
+
+
+def test_2d_buffer_overflow_detection():
+    engine = RuleEngine()
+
+    # Case 1: out-of-bounds on second dimension specifically
+    src_overflow = """
+    int foo() {
+        int grid[3][4];
+        grid[1][9] = 1;
+        return grid[0][0];
+    }
+    """
+    res_overflow = engine.analyze_source(src_overflow)
+    assert res_overflow["ok"] is True
+    overflow_findings = [f for f in res_overflow["findings"] if f.rule_id == "BUFFER_OVERFLOW"]
+    assert len(overflow_findings) == 1
+    assert overflow_findings[0].line == 4
+    assert "Second index 9 is out of bounds" in overflow_findings[0].message
+
+    # Case 2: safe in-bounds 2D access
+    src_safe = """
+    int foo() {
+        int grid[3][4];
+        grid[1][2] = 1;
+        return grid[2][3];
+    }
+    """
+    res_safe = engine.analyze_source(src_safe)
+    assert res_safe["ok"] is True
+    safe_overflows = [f for f in res_safe["findings"] if f.rule_id == "BUFFER_OVERFLOW"]
+    assert len(safe_overflows) == 0

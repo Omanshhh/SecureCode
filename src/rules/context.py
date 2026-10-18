@@ -17,9 +17,9 @@ details of the upstream modules:
    is_pointer - we only fix up the ownership the flat scope ids lost.
 """
 
-from src.parser.ast_nodes import VarDeclNode, ParamNode
+from src.parser.ast_nodes import VarDeclNode, ParamNode, ArrayAccessNode, AssignNode
 from src.analysis.cfg_builder import CFGBuilder
-from src.dataflow.expr_utils import walk, functions, global_decls
+from src.dataflow.expr_utils import walk, functions, global_decls, array_element_name
 from src.dataflow.reaching_defs import ReachingDefinitions, Definition
 from src.dataflow.definite_assignment import DefiniteAssignment
 
@@ -142,6 +142,19 @@ class AnalysisContext:
         if function not in self._definite:
             names, _defs = self._entry_state(function)
             universe = set(self.locals.get(function, {}))
+
+            func_node = self.functions.get(function)
+            if func_node is not None:
+                for node in walk(func_node):
+                    if isinstance(node, ArrayAccessNode):
+                        elem = array_element_name(node.name, node.index_expr, getattr(node, "index_expr2", None))
+                        if elem is not None:
+                            universe.add(elem)
+                    elif isinstance(node, AssignNode) and node.index_expr is not None:
+                        elem = array_element_name(node.target_name, node.index_expr, getattr(node, "index_expr2", None))
+                        if elem is not None:
+                            universe.add(elem)
+
             self._definite[function] = DefiniteAssignment(
                 self.cfgs[function],
                 universe=universe,

@@ -48,6 +48,29 @@ def parse_c_int_literal(value: str) -> int:
     return int(value, 0)
 
 
+def _try_constant_int(expr):
+    """Return int value if expr is an integer LiteralNode, else None."""
+    if isinstance(expr, LiteralNode) and expr.literal_type == "int":
+        try:
+            return parse_c_int_literal(expr.value)
+        except (TypeError, ValueError):
+            return None
+    return None
+
+
+def array_element_name(array_name, index1, index2=None) -> str:
+    """Produce canonical string key for constant array indexing, e.g. 'arr[3]' or 'grid[1][2]'."""
+    idx1 = _try_constant_int(index1) if isinstance(index1, ASTNode) else index1
+    if idx1 is None:
+        return None
+    if index2 is not None:
+        idx2 = _try_constant_int(index2) if isinstance(index2, ASTNode) else index2
+        if idx2 is None:
+            return None
+        return f"{array_name}[{idx1}][{idx2}]"
+    return f"{array_name}[{idx1}]"
+
+
 # ---------------------------------------------------------------
 # GENERIC TRAVERSAL
 # ---------------------------------------------------------------
@@ -127,7 +150,12 @@ def collect_uses(node):
     elif isinstance(node, ArrayAccessNode):
         # `a[i]` reads both the array and the index.
         uses.append((node.name, node.line))
+        elem_name = array_element_name(node.name, node.index_expr, getattr(node, "index_expr2", None))
+        if elem_name is not None:
+            uses.append((elem_name, node.line))
         uses.extend(collect_uses(node.index_expr))
+        if getattr(node, "index_expr2", None) is not None:
+            uses.extend(collect_uses(node.index_expr2))
 
     elif isinstance(node, BinOpNode):
         uses.extend(collect_uses(node.left))
@@ -165,6 +193,9 @@ def stmt_defs(stmt):
     - `a[0] = 5;` does not count as defining `a`. Writing one element does
       not initialise the whole array, so treating it as a definition would
       hide genuine uninitialised-use bugs.
+      However, it DOES define the synthetic element pseudo-name `a[0]`.
+    - `a[i] = 5;` with non-constant i returns `(f"__ANY_ELEM__:{a}", line)`
+      signaling that this statement may write any element of array `a`.
     """
     if stmt is None:
         return []
@@ -177,7 +208,12 @@ def stmt_defs(stmt):
     if isinstance(stmt, AssignNode):
         if stmt.index_expr is None:
             return [(stmt.target_name, stmt.line)]
-        return []
+        # Indexed assignment
+        elem_name = array_element_name(stmt.target_name, stmt.index_expr, getattr(stmt, "index_expr2", None))
+        if elem_name is not None:
+            return [(elem_name, stmt.line)]
+        # Non-constant index write
+        return [(f"__ANY_ELEM__:{stmt.target_name}", stmt.line)]
 
     return []
 
@@ -199,9 +235,14 @@ def stmt_uses(stmt):
         if stmt.index_expr is None:
             return collect_uses(stmt.value_expr)
 
-        # `a[i] = v` reads a, i and v.
+        # `a[i] = v` reads a, i and v. If i is constant, also register pseudo-name read if needed.
         uses = [(stmt.target_name, stmt.line)]
+        elem_name = array_element_name(stmt.target_name, stmt.index_expr, getattr(stmt, "index_expr2", None))
+        if elem_name is not None:
+            uses.append((elem_name, stmt.line))
         uses.extend(collect_uses(stmt.index_expr))
+        if getattr(stmt, "index_expr2", None) is not None:
+            uses.extend(collect_uses(stmt.index_expr2))
         uses.extend(collect_uses(stmt.value_expr))
         return uses
 

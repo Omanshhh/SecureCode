@@ -177,7 +177,8 @@ class SemanticAnalyzer:
             line_declared=node.line,
             is_initialized=initialized,
             is_pointer=node.is_pointer,
-            array_size=node.array_size
+            array_size=node.array_size,
+            array_size2=node.array_size2
         )
 
         if result is None:
@@ -203,6 +204,8 @@ class SemanticAnalyzer:
         # Analyze array index if present.
         if node.index_expr is not None:
             self.visit(node.index_expr)
+        if getattr(node, "index_expr2", None) is not None:
+            self.visit(node.index_expr2)
 
         # Check that the assignment target exists.
         symbol = self.symbol_table.lookup(node.target_name)
@@ -311,6 +314,8 @@ class SemanticAnalyzer:
 
         # Analyze array index
         self.visit(node.index_expr)
+        if getattr(node, "index_expr2", None) is not None:
+            self.visit(node.index_expr2)
 
     # --------------------------------------------------
     # FUNCTION CALL

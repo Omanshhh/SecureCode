@@ -41,10 +41,13 @@ def test_scalar_assignment_defines_target():
 
 
 def test_array_element_write_is_not_a_definition():
-    # Writing one element does not initialise the whole array, so treating
-    # this as a definition would hide real uninitialised-use bugs.
+    # A symbolic-index write does not define the whole array 'a' as a 
+    # scalar, but it DOES emit the wildcard marker so definite-assignment 
+    # conservatively treats it as covering every known element - this is 
+    # the soundness guarantee that avoids false positives on indexed writes.
     stmt = statements_of("int f() { int a[3]; a[i] = v; }")[1]
-    assert stmt_defs(stmt) == []
+    defs = stmt_defs(stmt)
+    assert defs == [('__ANY_ELEM__:a', 1)]
     assert names(stmt_uses(stmt)) == ["a", "i", "v"]
 
 

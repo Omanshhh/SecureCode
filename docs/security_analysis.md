@@ -153,9 +153,14 @@ Stated deliberately rather than left to surface during a demo.
   assumed possibly written by the callee, so `gets(buf)` is not reported as a
   read of an uninitialised variable. This trades false negatives for no false
   positives.
-- **Arrays are not tracked element-wise.** `int a[3]; a[0] = 1;` does not mark
-  `a` assigned, and arrays are therefore excluded from uninitialised-use
-  reporting - their storage always exists, only their contents are undefined.
+- **Arrays and elements.** Constant-index array elements (e.g. `arr[3]`, `grid[1][2]`)
+  ARE now tracked per-element with full path-sensitivity via synthetic pseudo-names.
+  A non-constant write (e.g. `arr[i] = ...`) conservatively marks all known elements
+  of that array assigned (sound, no false positives, though may miss bugs reached only
+  through symbolic writes). Non-constant-index reads still fall back to whole-array
+  "was it ever written" reasoning. Full runtime-index tracking across loops and pointer
+  arithmetic is undecidable in general and out of scope, same as GCC/Clang's own
+  uninitialized-variable analysis.
 - **Writes through pointers are not analysable.** `docs/grammar.md` defines an
   assignment target as `IDENTIFIER ('[' expr ']')?`, so `*p = 5;` does not
   parse. The null-dereference rule covers reads (`x = *p`, `p[i]`) only.

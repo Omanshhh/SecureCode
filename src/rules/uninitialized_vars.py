@@ -15,7 +15,8 @@ and anything passed with `&`, is treated as possibly written by the callee.
 
 from src.rules.base import Rule
 from src.rules.finding import Finding, Severity
-from src.dataflow.expr_utils import stmt_uses, call_arg_identifiers
+from src.parser.ast_nodes import ArrayAccessNode
+from src.dataflow.expr_utils import stmt_uses, call_arg_identifiers, find_all, array_element_name
 
 
 class UninitializedVariableRule(Rule):
@@ -91,6 +92,44 @@ class UninitializedVariableRule(Rule):
                             f"Give '{name}' an initial value at its "
                             f"declaration, or assign it on every branch "
                             f"before this use."
+                        ),
+                        function=func_name,
+                    ))
+
+                # Check array element reads with constant index
+                for access in find_all(stmt, ArrayAccessNode):
+                    elem_name = array_element_name(access.name, access.index_expr, getattr(access, "index_expr2", None))
+                    if elem_name is None:
+                        continue
+                    if not ctx.is_local(access.name, func_name):
+                        continue
+                    if access.name in params:
+                        continue
+                    if access.name in skip:
+                        continue
+                    if elem_name in assigned:
+                        continue
+                    if (elem_name, access.line) in reported:
+                        continue
+
+                    reported.add((elem_name, access.line))
+                    symbol = ctx.lookup(access.name, func_name)
+                    declared = symbol.line_declared if symbol else None
+                    where = f" (declared at line {declared})" if declared else ""
+
+                    findings.append(Finding(
+                        rule_id=self.rule_id,
+                        type=self.name,
+                        line=access.line,
+                        severity=Severity.HIGH,
+                        message=(
+                            f"Array element '{elem_name}'{where} is read here but is "
+                            f"not assigned on every path that reaches this point. "
+                            f"Its value is whatever happened to be on the stack."
+                        ),
+                        suggested_fix=(
+                            f"Assign a value to '{elem_name}' before reading it, or "
+                            f"initialize the array at its declaration."
                         ),
                         function=func_name,
                     ))

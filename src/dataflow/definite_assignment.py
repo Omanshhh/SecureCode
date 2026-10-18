@@ -53,11 +53,22 @@ class DefiniteAssignment:
         self._solve()
 
     def _build_defs(self):
+        # Collect all pseudo-names for each array in the universe
+        array_elems = {}
+        for name in self.universe:
+            if "[" in name and name.endswith("]"):
+                base = name.split("[", 1)[0]
+                array_elems.setdefault(base, set()).add(name)
+
         for node_id in self.cfg.nodes:
             defined = set()
             for stmt in self.cfg.nodes[node_id].get("statements") or []:
                 for name, _line in stmt_defs(stmt):
-                    defined.add(name)
+                    if name.startswith("__ANY_ELEM__:"):
+                        base = name.split(":", 1)[1]
+                        defined.update(array_elems.get(base, set()))
+                    else:
+                        defined.add(name)
             self.defs[node_id] = defined
 
     def _solve(self):

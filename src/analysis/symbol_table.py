@@ -11,6 +11,7 @@ class Symbol:
     is_initialized: bool = False
     is_pointer: bool = False
     array_size: Optional[int] = None
+    array_size2: Optional[int] = None
 
 
 class SymbolTable:
@@ -72,7 +73,8 @@ class SymbolTable:
         line_declared: int,
         is_initialized: bool = False,
         is_pointer: bool = False,
-        array_size: Optional[int] = None
+        array_size: Optional[int] = None,
+        array_size2: Optional[int] = None
     ):
         """
         Declare a variable in the current scope.
@@ -96,7 +98,8 @@ class SymbolTable:
             line_declared=line_declared,
             is_initialized=is_initialized,
             is_pointer=is_pointer,
-            array_size=array_size
+            array_size=array_size,
+            array_size2=array_size2
         )
 
         self.current_scope()["symbols"][name] = symbol

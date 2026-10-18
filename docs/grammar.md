@@ -17,7 +17,7 @@ Rules defining the structure of programs, variables, types, and function definit
 program         → (func_def | decl)*
 type            → ('int' | 'char' | 'float') '*'*
 init_list       → '{' expr (',' expr)* '}'
-decl            → type IDENTIFIER ('[' INT_LIT ']')? ('=' (expr | init_list))? ';'
+decl            → type IDENTIFIER ('[' INT_LIT ']')? ('[' INT_LIT ']')? ('=' (expr | init_list))? ';'
 func_def        → type IDENTIFIER '(' params? ')' block
 params          → param (',' param)*
 param           → type IDENTIFIER
@@ -58,7 +58,7 @@ unary           → ('!' | '-' | '*' | '&') unary
 primary         → INT_LIT
                 | FLOAT_LIT
                 | STRING_LIT
-                | IDENTIFIER ('[' expr ']')?
+                | IDENTIFIER ('[' expr ']')? ('[' expr ']')?
                 | func_call
                 | '(' expr ')'
 func_call       → IDENTIFIER '(' args? ')'
@@ -66,4 +66,4 @@ args            → expr (',' expr)*
 assign_expr     → IDENTIFIER '=' expr
 ```
 
-**Known limitation:** Array access supports only a single index level (`arr[i]`). Multi-dimensional access (`arr[i][j]`) is not supported and will raise a ParserError.
+**Known limitation:** Array access supports single and 2D arrays (`arr[i]` and `arr[i][j]`). N-dimensional access (3D+, e.g. `arr[i][j][k]`) is not supported and will raise a ParserError.

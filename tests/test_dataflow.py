@@ -144,3 +144,67 @@ def test_condition_expressions_reach_the_cfg():
         assert cfg.nodes[node_id].get("statements"), (
             "condition node lost its expression"
         )
+
+
+def test_array_element_definite_assignment_cases():
+    from src.rules.engine import RuleEngine
+
+    engine = RuleEngine()
+
+    # Case 1: arr[3] read with no write anywhere -> flagged
+    src1 = """
+    int main() {
+        int arr[10];
+        int x = arr[3];
+        return x;
+    }
+    """
+    res1 = engine.analyze_source(src1)
+    assert res1["ok"] is True
+    uninit1 = [f for f in res1["findings"] if f.rule_id == "UNINITIALIZED_VAR"]
+    assert len(uninit1) == 1
+    assert "arr[3]" in uninit1[0].message
+
+    # Case 2: arr[3] written, then arr[3] read -> NOT flagged
+    src2 = """
+    int main() {
+        int arr[10];
+        arr[3] = 42;
+        int x = arr[3];
+        return x;
+    }
+    """
+    res2 = engine.analyze_source(src2)
+    assert res2["ok"] is True
+    uninit2 = [f for f in res2["findings"] if f.rule_id == "UNINITIALIZED_VAR"]
+    assert len(uninit2) == 0
+
+    # Case 3: arr[3] written, arr[7] read (different constant index) -> flagged
+    src3 = """
+    int main() {
+        int arr[10];
+        arr[3] = 42;
+        int x = arr[7];
+        return x;
+    }
+    """
+    res3 = engine.analyze_source(src3)
+    assert res3["ok"] is True
+    uninit3 = [f for f in res3["findings"] if f.rule_id == "UNINITIALIZED_VAR"]
+    assert len(uninit3) == 1
+    assert "arr[7]" in uninit3[0].message
+
+    # Case 4: arr[3] written, then arr[i] written with non-constant i, then arr[7] read -> NOT flagged
+    src4 = """
+    int main(int i) {
+        int arr[10];
+        arr[3] = 42;
+        arr[i] = 100;
+        int x = arr[7];
+        return x;
+    }
+    """
+    res4 = engine.analyze_source(src4)
+    assert res4["ok"] is True
+    uninit4 = [f for f in res4["findings"] if f.rule_id == "UNINITIALIZED_VAR"]
+    assert len(uninit4) == 0

@@ -20,6 +20,7 @@ class VarDeclNode(ASTNode):
     name: str
     is_pointer: bool = False
     array_size: Optional[int] = None  # For static array size, if any
+    array_size2: Optional[int] = None  # For 2D static array size, if any
     init_expr: Optional[ASTNode] = None
     line: int = 0
 
@@ -51,6 +52,7 @@ class BlockNode(ASTNode):
 class AssignNode(ASTNode):
     target_name: str
     index_expr: Optional[ASTNode] = None  # For array element assignment
+    index_expr2: Optional[ASTNode] = None  # For 2D array element assignment
     value_expr: ASTNode = None
     line: int = 0
 
@@ -123,6 +125,7 @@ class IdentifierNode(ASTNode):
 class ArrayAccessNode(ASTNode):
     name: str
     index_expr: ASTNode
+    index_expr2: Optional[ASTNode] = None
     line: int = 0
 
 

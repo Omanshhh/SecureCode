@@ -127,10 +127,15 @@ class Parser:
         else:
             # variable declaration
             array_size = None
+            array_size2 = None
             if self._match(TokenType.PUNCTUATION, '['):
                 size_tok = self._expect(TokenType.INT_LITERAL)
                 array_size = parse_c_int_literal(size_tok.value)
                 self._expect(TokenType.PUNCTUATION, ']')
+                if self._match(TokenType.PUNCTUATION, '['):
+                    size_tok2 = self._expect(TokenType.INT_LITERAL)
+                    array_size2 = parse_c_int_literal(size_tok2.value)
+                    self._expect(TokenType.PUNCTUATION, ']')
             init_expr = None
             if self._match(TokenType.OPERATOR, '='):
                 if self.current.type == TokenType.PUNCTUATION and self.current.value == '{':
@@ -150,6 +155,7 @@ class Parser:
                 name=name,
                 is_pointer=is_pointer,
                 array_size=array_size,
+                array_size2=array_size2,
                 init_expr=init_expr,
                 line=name_tok.line,
             )
@@ -216,13 +222,17 @@ class Parser:
                 start_tok = self.current
                 target_name = self._expect(TokenType.IDENTIFIER).value
                 index_expr = None
+                index_expr2 = None
                 if self._match(TokenType.PUNCTUATION, '['):
                     index_expr = self.parse_expr()
                     self._expect(TokenType.PUNCTUATION, ']')
+                    if self._match(TokenType.PUNCTUATION, '['):
+                        index_expr2 = self.parse_expr()
+                        self._expect(TokenType.PUNCTUATION, ']')
                 self._expect(TokenType.OPERATOR, '=')
                 value_expr = self.parse_expr()
                 self._expect(TokenType.PUNCTUATION, ';')
-                return AssignNode(target_name=target_name, index_expr=index_expr, value_expr=value_expr, line=start_tok.line)
+                return AssignNode(target_name=target_name, index_expr=index_expr, index_expr2=index_expr2, value_expr=value_expr, line=start_tok.line)
         if self.current.type == TokenType.PUNCTUATION and self.current.value == '{':
             return self.parse_block()
         raise ParserError("Unexpected statement", self.current)
@@ -399,7 +409,11 @@ class Parser:
             if self._match(TokenType.PUNCTUATION, '['):
                 index = self.parse_expr()
                 self._expect(TokenType.PUNCTUATION, ']')
-                return ArrayAccessNode(name=name, index_expr=index, line=tok.line)
+                index2 = None
+                if self._match(TokenType.PUNCTUATION, '['):
+                    index2 = self.parse_expr()
+                    self._expect(TokenType.PUNCTUATION, ']')
+                return ArrayAccessNode(name=name, index_expr=index, index_expr2=index2, line=tok.line)
             return IdentifierNode(name=name, line=tok.line)
         if tok.type == TokenType.PUNCTUATION and tok.value == '(':
             self._advance()
