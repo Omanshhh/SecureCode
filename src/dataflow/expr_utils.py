@@ -24,6 +24,7 @@ from src.parser.ast_nodes import (
     AssignNode,
     IfNode,
     WhileNode,
+    DoWhileNode,
     ForNode,
     ReturnNode,
     ExprStmtNode,
@@ -34,6 +35,7 @@ from src.parser.ast_nodes import (
     ArrayAccessNode,
     FuncCallNode,
     InitListNode,
+    SwitchNode,
 )
 
 
@@ -252,11 +254,14 @@ def stmt_uses(stmt):
     if isinstance(stmt, ReturnNode):
         return collect_uses(stmt.value)
 
-    if isinstance(stmt, (IfNode, WhileNode)):
+    if isinstance(stmt, (IfNode, WhileNode, DoWhileNode)):
         return collect_uses(stmt.condition)
 
     if isinstance(stmt, ForNode):
         return collect_uses(stmt.condition)
+
+    if isinstance(stmt, SwitchNode):
+        return collect_uses(stmt.switch_expr)
 
     # Bare expression (e.g. a CFG condition node).
     return collect_uses(stmt)

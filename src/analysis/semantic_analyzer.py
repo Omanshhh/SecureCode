@@ -7,6 +7,7 @@ from src.parser.ast_nodes import (
     AssignNode,
     IfNode,
     WhileNode,
+    DoWhileNode,
     ForNode,
     ReturnNode,
     ExprStmtNode,
@@ -16,7 +17,10 @@ from src.parser.ast_nodes import (
     IdentifierNode,
     ArrayAccessNode,
     FuncCallNode,
-    InitListNode
+    InitListNode,
+    BreakNode,
+    CaseClauseNode,
+    SwitchNode,
 )
 
 from src.analysis.symbol_table import SymbolTable
@@ -72,6 +76,9 @@ class SemanticAnalyzer:
         elif isinstance(node, WhileNode):
             self.visit_while(node)
 
+        elif isinstance(node, DoWhileNode):
+            self.visit_do_while(node)
+
         elif isinstance(node, ForNode):
             self.visit_for(node)
 
@@ -102,6 +109,12 @@ class SemanticAnalyzer:
 
         elif isinstance(node, LiteralNode):
             pass
+
+        elif isinstance(node, BreakNode):
+            pass  # No analysis needed for break itself
+
+        elif isinstance(node, SwitchNode):
+            self.visit_switch(node)
 
     # --------------------------------------------------
     # PROGRAM
@@ -250,6 +263,17 @@ class SemanticAnalyzer:
         self.visit_block(node.body)
 
     # --------------------------------------------------
+    # DO-WHILE
+    # --------------------------------------------------
+
+    def visit_do_while(self, node):
+        # Analyze loop body as a block (new scope)
+        self.visit_block(node.body)
+
+        # Analyze condition
+        self.visit(node.condition)
+
+    # --------------------------------------------------
     # FOR
     # --------------------------------------------------
 
@@ -333,3 +357,23 @@ class SemanticAnalyzer:
     def visit_init_list(self, node):
         for element in node.elements:
             self.visit(element)
+
+    # --------------------------------------------------
+    # SWITCH
+    # --------------------------------------------------
+
+    def visit_switch(self, node):
+        # Analyze the switch expression.
+        self.visit(node.switch_expr)
+
+        # Case bodies share the switch's own scope — no nested scope per case.
+        # Visit each case clause: match value, then body statements.
+        for case in node.cases:
+            self.visit(case.match_value)
+            for stmt in case.body:
+                self.visit(stmt)
+
+        # Default body, if present.
+        if node.default_body is not None:
+            for stmt in node.default_body:
+                self.visit(stmt)

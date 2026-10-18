@@ -31,17 +31,28 @@ stmt            → decl
                 | assign_stmt
                 | if_stmt
                 | while_stmt
+                | do_while_stmt
                 | for_stmt
+                | switch_stmt
+                | break_stmt
                 | return_stmt
                 | expr_stmt
                 | block
-assign_stmt     → IDENTIFIER ('[' expr ']')? '=' expr ';'
+assign_stmt     → IDENTIFIER ('[' expr ']')? ('[' expr ']')? ('=' | '+=' | '-=' | '*=' | '/=' | '%=') expr ';'
 if_stmt         → 'if' '(' expr ')' block ('else' (if_stmt | block))?
 while_stmt      → 'while' '(' expr ')' block
+do_while_stmt   → 'do' block 'while' '(' expr ')' ';'
 for_stmt        → 'for' '(' (assign_stmt | decl) expr ';' assign_expr ')' block
+switch_stmt     → 'switch' '(' expr ')' '{' case_clause* default_clause? '}'
+case_clause     → 'case' (INT_LIT | IDENTIFIER) ':' stmt* break_stmt
+default_clause  → 'default' ':' stmt* break_stmt
+break_stmt      → 'break' ';'
 return_stmt     → 'return' expr? ';'
 expr_stmt       → func_call ';'
 ```
+
+> **Switch-case limitation:** Fallthrough semantics are not supported. Every
+> `case_clause` and `default_clause` must end in `break;`.
 
 ### Expressions
 Rules determining the precedence, associativity, and structure of expressions.
@@ -63,7 +74,7 @@ primary         → INT_LIT
                 | '(' expr ')'
 func_call       → IDENTIFIER '(' args? ')'
 args            → expr (',' expr)*
-assign_expr     → IDENTIFIER '=' expr
+assign_expr     → IDENTIFIER ('=' | '+=' | '-=' | '*=' | '/=' | '%=') expr
 ```
 
 **Known limitation:** Array access supports single and 2D arrays (`arr[i]` and `arr[i][j]`). N-dimensional access (3D+, e.g. `arr[i][j][k]`) is not supported and will raise a ParserError.

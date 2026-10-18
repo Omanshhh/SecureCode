@@ -5,9 +5,9 @@ from src.lexer.tokens import Token, TokenType
 from .ast_nodes import (
     ASTNode,
     ProgramNode, VarDeclNode, FuncDefNode, ParamNode, BlockNode, AssignNode,
-    IfNode, WhileNode, ForNode, ReturnNode, ExprStmtNode, BinOpNode,
+    IfNode, WhileNode, DoWhileNode, ForNode, ReturnNode, ExprStmtNode, BinOpNode,
     UnaryOpNode, LiteralNode, IdentifierNode, ArrayAccessNode, FuncCallNode,
-    InitListNode
+    InitListNode, BreakNode, CaseClauseNode, SwitchNode
 )
 from src.dataflow.expr_utils import parse_c_int_literal
 
@@ -55,7 +55,7 @@ class Parser:
         raise ParserError(f"Expected {value if value else typ.name}, got '{self.current.value}'", self.current)
 
     # Error recovery -----------------------------------------------------
-    _SYNC_KEYWORDS = {"int", "char", "float", "if", "while", "for", "return"}
+    _SYNC_KEYWORDS = {"int", "char", "float", "if", "while", "for", "return", "do", "switch", "break"}
 
     def synchronize(self) -> None:
         """Advance tokens until a safe resume point: ';', '}', or a statement-starting keyword."""
@@ -96,7 +96,7 @@ class Parser:
                 except ParserError as e:
                     self.errors.append(e)
                     self.synchronize()
-            elif self.current.type == TokenType.KEYWORD and self.current.value in {"if", "while", "for", "return"}:
+            elif self.current.type == TokenType.KEYWORD and self.current.value in {"if", "while", "for", "return", "do", "switch", "break"}:
                 try:
                     decls.append(self.parse_stmt())
                 except ParserError as e:
@@ -204,10 +204,16 @@ class Parser:
                 return self.parse_if_stmt()
             if kw == "while":
                 return self.parse_while_stmt()
+            if kw == "do":
+                return self.parse_do_while_stmt()
             if kw == "for":
                 return self.parse_for_stmt()
             if kw == "return":
                 return self.parse_return_stmt()
+            if kw == "switch":
+                return self.parse_switch_stmt()
+            if kw == "break":
+                return self.parse_break_stmt()
         # identifier based statements
         if self.current.type == TokenType.IDENTIFIER:
             # lookahead
@@ -229,13 +235,123 @@ class Parser:
                     if self._match(TokenType.PUNCTUATION, '['):
                         index_expr2 = self.parse_expr()
                         self._expect(TokenType.PUNCTUATION, ']')
-                self._expect(TokenType.OPERATOR, '=')
-                value_expr = self.parse_expr()
+                
+                # Check for = or compound operators +=, -=, *=, /=, %=
+                compound_map = {'+=': '+', '-=': '-', '*=': '*', '/=': '/', '%=': '%'}
+                if self.current.type == TokenType.OPERATOR and self.current.value in compound_map:
+                    op_tok = self._advance()
+                    rhs = self.parse_expr()
+                    # Desugar: left-hand side read
+                    if index_expr is not None:
+                        lhs_read = ArrayAccessNode(name=target_name, index_expr=index_expr, index_expr2=index_expr2, line=start_tok.line)
+                    else:
+                        lhs_read = IdentifierNode(name=target_name, line=start_tok.line)
+                    value_expr = BinOpNode(op=compound_map[op_tok.value], left=lhs_read, right=rhs, line=op_tok.line)
+                else:
+                    self._expect(TokenType.OPERATOR, '=')
+                    value_expr = self.parse_expr()
+
                 self._expect(TokenType.PUNCTUATION, ';')
                 return AssignNode(target_name=target_name, index_expr=index_expr, index_expr2=index_expr2, value_expr=value_expr, line=start_tok.line)
         if self.current.type == TokenType.PUNCTUATION and self.current.value == '{':
             return self.parse_block()
         raise ParserError("Unexpected statement", self.current)
+
+    def parse_break_stmt(self) -> BreakNode:
+        """Parse: 'break' ';'"""
+        kw_tok = self._expect(TokenType.KEYWORD, 'break')
+        self._expect(TokenType.PUNCTUATION, ';')
+        return BreakNode(line=kw_tok.line)
+
+    def parse_switch_stmt(self) -> SwitchNode:
+        """Parse: 'switch' '(' expr ')' '{' case_clause* default_clause? '}'
+
+        Every case_clause and default_clause must end with 'break;' or 'return ...;'.
+        No fallthrough is supported — this is a deliberate simplification.
+        """
+        kw_tok = self._expect(TokenType.KEYWORD, 'switch')
+        self._expect(TokenType.PUNCTUATION, '(')
+        switch_expr = self.parse_expr()
+        self._expect(TokenType.PUNCTUATION, ')')
+        self._expect(TokenType.PUNCTUATION, '{')
+
+        cases: List[CaseClauseNode] = []
+        default_body: List[ASTNode] = None
+
+        while not (self.current.type == TokenType.PUNCTUATION and self.current.value == '}'):
+            if self.current.type == TokenType.EOF:
+                break
+
+            if self.current.type == TokenType.KEYWORD and self.current.value == 'case':
+                # Parse: 'case' (INT_LIT | IDENTIFIER) ':' stmt* break_or_return
+                case_tok = self._advance()  # consume 'case'
+                # Match value: integer literal or identifier (enum constant)
+                if self.current.type == TokenType.INT_LITERAL:
+                    lit_tok = self._advance()
+                    match_value = LiteralNode(value=lit_tok.value, literal_type="int", line=lit_tok.line)
+                elif self.current.type == TokenType.IDENTIFIER:
+                    id_tok = self._advance()
+                    match_value = IdentifierNode(name=id_tok.value, line=id_tok.line)
+                else:
+                    raise ParserError("Expected integer literal or identifier after 'case'", self.current)
+                self._expect(TokenType.PUNCTUATION, ':')
+                try:
+                    body = self._parse_case_body()
+                except ParserError as e:
+                    # Missing break/return — record error but keep the partial body
+                    # so parsing of the rest of the switch can continue.
+                    self.errors.append(e)
+                    body = []
+                cases.append(CaseClauseNode(match_value=match_value, body=body, line=case_tok.line))
+
+            elif self.current.type == TokenType.KEYWORD and self.current.value == 'default':
+                # Parse: 'default' ':' stmt* break_or_return
+                self._advance()  # consume 'default'
+                self._expect(TokenType.PUNCTUATION, ':')
+                try:
+                    default_body = self._parse_case_body()
+                except ParserError as e:
+                    self.errors.append(e)
+                    default_body = []
+
+            else:
+                raise ParserError("Expected 'case' or 'default' inside switch", self.current)
+
+        self._expect(TokenType.PUNCTUATION, '}')
+        return SwitchNode(switch_expr=switch_expr, cases=cases, default_body=default_body, line=kw_tok.line)
+
+    def _parse_case_body(self) -> List[ASTNode]:
+        """Parse statements for a single case/default clause.
+
+        Reads statements until 'break' or 'return' is found (the terminator is
+        included in the returned list). Raises ParserError if the clause ends
+        without a break or return (fallthrough is not permitted).
+        """
+        stmts: List[ASTNode] = []
+        while True:
+            # Stop at 'case', 'default', or '}' — these belong to the switch, not this clause
+            if self.current.type == TokenType.PUNCTUATION and self.current.value == '}':
+                break
+            if self.current.type == TokenType.KEYWORD and self.current.value in ('case', 'default'):
+                break
+            if self.current.type == TokenType.EOF:
+                break
+            if self.current.type == TokenType.KEYWORD and self.current.value == 'break':
+                stmts.append(self.parse_break_stmt())
+                return stmts
+            if self.current.type == TokenType.KEYWORD and self.current.value == 'return':
+                stmts.append(self.parse_return_stmt())
+                return stmts
+            try:
+                stmts.append(self.parse_stmt())
+            except ParserError as e:
+                self.errors.append(e)
+                self.synchronize()
+        # Reached clause boundary without break/return
+        raise ParserError(
+            "Case clause must end with 'break;' or 'return ...;' — fallthrough is not supported",
+            self.current
+        )
 
     def parse_if_stmt(self) -> IfNode:
         kw_tok = self._expect(TokenType.KEYWORD, 'if')
@@ -259,6 +375,16 @@ class Parser:
         body = self.parse_block()
         return WhileNode(condition=cond, body=body, line=kw_tok.line)
 
+    def parse_do_while_stmt(self) -> DoWhileNode:
+        kw_tok = self._expect(TokenType.KEYWORD, 'do')
+        body = self.parse_block()
+        self._expect(TokenType.KEYWORD, 'while')
+        self._expect(TokenType.PUNCTUATION, '(')
+        cond = self.parse_expr()
+        self._expect(TokenType.PUNCTUATION, ')')
+        self._expect(TokenType.PUNCTUATION, ';')
+        return DoWhileNode(body=body, condition=cond, line=kw_tok.line)
+
     def parse_for_stmt(self) -> ForNode:
         kw_tok = self._expect(TokenType.KEYWORD, 'for')
         self._expect(TokenType.PUNCTUATION, '(')
@@ -267,10 +393,8 @@ class Parser:
             init = self._parse_decl_or_func()
         else:
             # assignment style init
-            target = self._expect(TokenType.IDENTIFIER).value
-            self._expect(TokenType.OPERATOR, '=')
-            value = self.parse_expr()
-            init = AssignNode(target_name=target, value_expr=value, line=self.current.line)
+            init = self.parse_assign_expr()
+            self._expect(TokenType.PUNCTUATION, ';')
         cond = self.parse_expr()
         self._expect(TokenType.PUNCTUATION, ';')
         update = self.parse_assign_expr()
@@ -279,11 +403,19 @@ class Parser:
         return ForNode(init=init, condition=cond, update=update, body=body, line=kw_tok.line)
 
     def parse_assign_expr(self) -> AssignNode:
-        # simple assignment used in for‑update (IDENTIFIER = expr)
+        # simple or compound assignment used in for-update (IDENTIFIER = expr or IDENTIFIER += expr)
+        start_tok = self.current
         target = self._expect(TokenType.IDENTIFIER).value
-        self._expect(TokenType.OPERATOR, '=')
-        value = self.parse_expr()
-        return AssignNode(target_name=target, value_expr=value, line=self.current.line)
+        compound_map = {'+=': '+', '-=': '-', '*=': '*', '/=': '/', '%=': '%'}
+        if self.current.type == TokenType.OPERATOR and self.current.value in compound_map:
+            op_tok = self._advance()
+            rhs = self.parse_expr()
+            lhs_read = IdentifierNode(name=target, line=start_tok.line)
+            value_expr = BinOpNode(op=compound_map[op_tok.value], left=lhs_read, right=rhs, line=op_tok.line)
+        else:
+            self._expect(TokenType.OPERATOR, '=')
+            value_expr = self.parse_expr()
+        return AssignNode(target_name=target, value_expr=value_expr, line=start_tok.line)
 
     def parse_return_stmt(self) -> ReturnNode:
         kw_tok = self._expect(TokenType.KEYWORD, 'return')

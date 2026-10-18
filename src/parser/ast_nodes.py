@@ -73,11 +73,38 @@ class WhileNode(ASTNode):
 
 
 @dataclass
+class DoWhileNode(ASTNode):
+    body: BlockNode
+    condition: ASTNode
+    line: int = 0
+
+
+@dataclass
 class ForNode(ASTNode):
     init: ASTNode  # Could be VarDeclNode or AssignNode
     condition: ASTNode
     update: ASTNode
     body: BlockNode
+    line: int = 0
+
+
+@dataclass
+class BreakNode(ASTNode):
+    line: int = 0
+
+
+@dataclass
+class CaseClauseNode(ASTNode):
+    match_value: ASTNode  # LiteralNode or IdentifierNode
+    body: List[ASTNode]
+    line: int = 0
+
+
+@dataclass
+class SwitchNode(ASTNode):
+    switch_expr: ASTNode
+    cases: List[CaseClauseNode]
+    default_body: Optional[List[ASTNode]] = None
     line: int = 0
 
 

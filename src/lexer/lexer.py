@@ -7,14 +7,14 @@ class LexerError(Exception):
         self.column = column
 
 class Lexer:
-    KEYWORDS = {'int', 'char', 'float', 'if', 'else', 'while', 'for', 'return'}
+    KEYWORDS = {'int', 'char', 'float', 'if', 'else', 'while', 'for', 'return', 'do', 'switch', 'case', 'default', 'break'}
     
     # Sort operators by length descending so that '==' matches before '='
     OPERATORS = [
-        '==', '!=', '<=', '>=', '&&', '||', 
+        '==', '!=', '<=', '>=', '&&', '||', '+=', '-=', '*=', '/=', '%=',
         '+', '-', '*', '/', '%', '=', '<', '>', '!', '&'
     ]
-    PUNCTUATION = ['(', ')', '{', '}', '[', ']', ';', ',']
+    PUNCTUATION = ['(', ')', '{', '}', '[', ']', ';', ',', ':']
     
     def __init__(self, source: str):
         self.source = source

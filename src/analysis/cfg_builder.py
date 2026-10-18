@@ -6,9 +6,13 @@ from src.parser.ast_nodes import (
     AssignNode,
     IfNode,
     WhileNode,
+    DoWhileNode,
     ForNode,
     ReturnNode,
-    ExprStmtNode
+    ExprStmtNode,
+    BreakNode,
+    CaseClauseNode,
+    SwitchNode,
 )
 
 
@@ -17,6 +21,7 @@ class CFGBuilder:
     def __init__(self):
         self.graph = nx.DiGraph()
         self.node_counter = 0
+        self._break_target = None  # Set to a merge_node when inside a switch
 
     def new_node(self, statements=None, label=None):
         """Create a new CFG node."""
@@ -282,6 +287,48 @@ class CFGBuilder:
             return condition_node, [(condition_node, "false")]
 
         # ---------------------------------------------
+        # DO-WHILE LOOP
+        # ---------------------------------------------
+
+        if isinstance(statement, DoWhileNode):
+
+            # The body executes first, unconditionally.
+            body_first, body_last = self.build_block(
+                statement.body
+            )
+
+            # The condition expression is attached to the condition node
+            # so data-flow analysis sees the variables it reads.
+            condition_node = self.new_node(
+                statements=[statement.condition] if statement.condition is not None else [],
+                label="DO-WHILE CONDITION"
+            )
+
+            self.graph.nodes[condition_node]["condition"] = statement.condition
+
+            # Body → condition
+            for item in body_last:
+                if isinstance(item, tuple):
+                    node = item[0]
+                    edge_type = item[1]
+                    self.add_edge(node, condition_node, edge_type=edge_type)
+                else:
+                    self.add_edge(item, condition_node)
+
+            # Condition: True → loop back to body_first
+            if body_first is not None:
+                self.add_edge(
+                    condition_node,
+                    body_first,
+                    edge_type="true"
+                )
+
+            # Condition: False → next statement
+            # Entry to this loop statement is body_first (or condition_node if body is empty)
+            entry_node = body_first if body_first is not None else condition_node
+            return entry_node, [(condition_node, "false")]
+
+        # ---------------------------------------------
         # FOR LOOP
         # ---------------------------------------------
 
@@ -368,6 +415,86 @@ class CFGBuilder:
 
             # False condition continues forward.
             return first_node, [(condition_node, "false")]
+
+        # ---------------------------------------------
+        # BREAK
+        # ---------------------------------------------
+
+        if isinstance(statement, BreakNode):
+            node = self.new_node(statements=[statement], label="BREAK")
+            # Route to the enclosing switch's merge node if one is set.
+            if self._break_target is not None:
+                self.add_edge(node, self._break_target, edge_type="break")
+            # Break terminates this path (like return), so return empty continuations.
+            return node, []
+
+        # ---------------------------------------------
+        # SWITCH
+        # ---------------------------------------------
+
+        if isinstance(statement, SwitchNode):
+            # Dispatch node holds the switch expression for data-flow analysis.
+            dispatch_node = self.new_node(
+                statements=[statement.switch_expr],
+                label="SWITCH DISPATCH",
+            )
+            self.graph.nodes[dispatch_node]["switch_expr"] = statement.switch_expr
+
+            # Merge node — all break edges land here; this is the switch exit.
+            merge_node = self.new_node(statements=[], label="SWITCH MERGE")
+
+            # Save and set break target so BreakNodes inside case bodies route here.
+            saved_break_target = self._break_target
+            self._break_target = merge_node
+
+            # Build each case clause.
+            for case in statement.cases:
+                # Determine edge label from the case match value.
+                if hasattr(case.match_value, "value"):
+                    edge_label = f"case:{case.match_value.value}"
+                elif hasattr(case.match_value, "name"):
+                    edge_label = f"case:{case.match_value.name}"
+                else:
+                    edge_label = "case:?"
+
+                # Build the case body as a synthetic block.
+                from src.parser.ast_nodes import BlockNode as _BlockNode
+                synthetic_block = _BlockNode(statements=case.body, line=case.line)
+                case_first, case_last = self.build_block(synthetic_block)
+
+                if case_first is not None:
+                    self.add_edge(dispatch_node, case_first, edge_type=edge_label)
+                    # Any non-break continuations (should not exist in valid code,
+                    # but handle defensively) wire to merge.
+                    for item in case_last:
+                        n = item[0] if isinstance(item, tuple) else item
+                        et = item[1] if isinstance(item, tuple) else "normal"
+                        self.add_edge(n, merge_node, edge_type=et)
+                else:
+                    # Empty case body — direct dispatch to merge.
+                    self.add_edge(dispatch_node, merge_node, edge_type=edge_label)
+
+            # Default clause.
+            if statement.default_body is not None:
+                from src.parser.ast_nodes import BlockNode as _BlockNode
+                default_block = _BlockNode(statements=statement.default_body, line=statement.line)
+                default_first, default_last = self.build_block(default_block)
+                if default_first is not None:
+                    self.add_edge(dispatch_node, default_first, edge_type="default")
+                    for item in default_last:
+                        n = item[0] if isinstance(item, tuple) else item
+                        et = item[1] if isinstance(item, tuple) else "normal"
+                        self.add_edge(n, merge_node, edge_type=et)
+                else:
+                    self.add_edge(dispatch_node, merge_node, edge_type="default")
+            else:
+                # No default: dispatch falls through to merge directly.
+                self.add_edge(dispatch_node, merge_node, edge_type="default")
+
+            # Restore break target.
+            self._break_target = saved_break_target
+
+            return dispatch_node, [merge_node]
 
         # ---------------------------------------------
         # UNKNOWN STATEMENT
