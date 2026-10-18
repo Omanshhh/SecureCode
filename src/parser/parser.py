@@ -9,6 +9,7 @@ from .ast_nodes import (
     UnaryOpNode, LiteralNode, IdentifierNode, ArrayAccessNode, FuncCallNode,
     InitListNode
 )
+from src.dataflow.expr_utils import parse_c_int_literal
 
 class ParserError(Exception):
     def __init__(self, message: str, token: Token):
@@ -24,6 +25,7 @@ class Parser:
         self.tokens = tokens
         self.pos = 0
         self.current: Token = self.tokens[0] if self.tokens else Token(TokenType.EOF, "", -1, -1)
+        self.errors: List[ParserError] = []
 
     # Helper methods -----------------------------------------------------
     def _peek(self, offset: int = 0) -> Token:
@@ -52,10 +54,36 @@ class Parser:
             return self._advance()
         raise ParserError(f"Expected {value if value else typ.name}, got '{self.current.value}'", self.current)
 
+    # Error recovery -----------------------------------------------------
+    _SYNC_KEYWORDS = {"int", "char", "float", "if", "while", "for", "return"}
+
+    def synchronize(self) -> None:
+        """Advance tokens until a safe resume point: ';', '}', or a statement-starting keyword."""
+        while self.current.type != TokenType.EOF:
+            if self.current.type == TokenType.PUNCTUATION and self.current.value == ';':
+                self._advance()   # consume the ';' so the next iteration starts fresh
+                return
+            if self.current.type == TokenType.PUNCTUATION and self.current.value == '}':
+                return            # don't consume '}' — let the enclosing block close itself
+            if self.current.type == TokenType.KEYWORD and self.current.value in self._SYNC_KEYWORDS:
+                return
+            self._advance()
+
+    def has_errors(self) -> bool:
+        return bool(self.errors)
+
+    def get_errors(self) -> List[ParserError]:
+        return list(self.errors)
+
     # Parsing entry point ------------------------------------------------
     def parse(self) -> ProgramNode:
         program = self.parse_program()
-        self._expect(TokenType.EOF)
+        # Only expect EOF when no error recovery consumed all tokens
+        if self.current.type != TokenType.EOF and not self.errors:
+            try:
+                self._expect(TokenType.EOF)
+            except ParserError as e:
+                self.errors.append(e)
         return program
 
     # Grammar rule methods ----------------------------------------------
@@ -63,13 +91,26 @@ class Parser:
         decls: List[ASTNode] = []
         while self.current.type != TokenType.EOF:
             if self.current.type == TokenType.KEYWORD and self.current.value in {"int", "char", "float"}:
-                decls.append(self._parse_decl_or_func())
+                try:
+                    decls.append(self._parse_decl_or_func())
+                except ParserError as e:
+                    self.errors.append(e)
+                    self.synchronize()
             elif self.current.type == TokenType.KEYWORD and self.current.value in {"if", "while", "for", "return"}:
-                decls.append(self.parse_stmt())
+                try:
+                    decls.append(self.parse_stmt())
+                except ParserError as e:
+                    self.errors.append(e)
+                    self.synchronize()
             elif self.current.type == TokenType.IDENTIFIER:
-                decls.append(self.parse_stmt())
+                try:
+                    decls.append(self.parse_stmt())
+                except ParserError as e:
+                    self.errors.append(e)
+                    self.synchronize()
             else:
-                raise ParserError("Unexpected token in program", self.current)
+                self.errors.append(ParserError("Unexpected token in program", self.current))
+                self.synchronize()
         return ProgramNode(decls, line=1)
 
     def _parse_decl_or_func(self) -> ASTNode:
@@ -88,7 +129,7 @@ class Parser:
             array_size = None
             if self._match(TokenType.PUNCTUATION, '['):
                 size_tok = self._expect(TokenType.INT_LITERAL)
-                array_size = int(size_tok.value)
+                array_size = parse_c_int_literal(size_tok.value)
                 self._expect(TokenType.PUNCTUATION, ']')
             init_expr = None
             if self._match(TokenType.OPERATOR, '='):
@@ -135,12 +176,18 @@ class Parser:
         return params
 
     def parse_block(self) -> BlockNode:
-        self._expect(TokenType.PUNCTUATION, '{')
+        open_tok = self._expect(TokenType.PUNCTUATION, '{')
         stmts: List[ASTNode] = []
         while not (self.current.type == TokenType.PUNCTUATION and self.current.value == '}'):
-            stmts.append(self.parse_stmt())
+            if self.current.type == TokenType.EOF:
+                break
+            try:
+                stmts.append(self.parse_stmt())
+            except ParserError as e:
+                self.errors.append(e)
+                self.synchronize()
         self._expect(TokenType.PUNCTUATION, '}')
-        return BlockNode(stmts, line=self.current.line)
+        return BlockNode(stmts, line=open_tok.line)
 
     def parse_stmt(self) -> ASTNode:
         if self.current.type == TokenType.KEYWORD:

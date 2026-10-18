@@ -38,6 +38,17 @@ from src.parser.ast_nodes import (
 
 
 # ---------------------------------------------------------------
+# LITERAL HELPERS
+# ---------------------------------------------------------------
+
+def parse_c_int_literal(value: str) -> int:
+    """Parse a C integer literal string (hex, octal, or decimal) into an int."""
+    if len(value) > 1 and value.startswith("0") and not value.lower().startswith("0x"):
+        return int(value, 8)
+    return int(value, 0)
+
+
+# ---------------------------------------------------------------
 # GENERIC TRAVERSAL
 # ---------------------------------------------------------------
 

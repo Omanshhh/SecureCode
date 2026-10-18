@@ -2,6 +2,15 @@
 
 This document contains the formal BNF grammar for the language.
 
+> **Error recovery:** The parser uses panic-mode error recovery at the statement
+> level. When a `ParserError` is raised inside `parse_program` or `parse_block`,
+> the error is recorded in `Parser.errors` and `synchronize()` advances tokens
+> until a safe resume point — a `';'`, a `'}'` (block boundary), or a
+> statement-starting keyword (`int`, `char`, `float`, `if`, `while`, `for`,
+> `return`). Only successfully parsed statements appear in the returned AST.
+> Call `Parser.has_errors()` / `Parser.get_errors()` after `parse()` to retrieve
+> all errors in one pass.
+
 ### Declarations
 Rules defining the structure of programs, variables, types, and function definitions.
 ```bnf

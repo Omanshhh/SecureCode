@@ -22,7 +22,7 @@ from src.parser.ast_nodes import (
     FuncCallNode,
     IdentifierNode,
 )
-from src.dataflow.expr_utils import walk
+from src.dataflow.expr_utils import walk, parse_c_int_literal
 
 
 # Functions that write their 2nd argument into their 1st, unbounded.
@@ -33,7 +33,7 @@ def _constant_int(expr):
     """Return the value of an integer literal expression, or None."""
     if isinstance(expr, LiteralNode) and expr.literal_type == "int":
         try:
-            return int(expr.value)
+            return parse_c_int_literal(expr.value)
         except (TypeError, ValueError):
             return None
     return None

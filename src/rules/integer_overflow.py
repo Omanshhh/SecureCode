@@ -17,6 +17,7 @@ proving it would need value-range analysis across the whole program.
 
 from src.rules.base import Rule
 from src.rules.finding import Finding, Severity
+from src.dataflow.expr_utils import parse_c_int_literal
 from src.parser.ast_nodes import (
     BinOpNode,
     UnaryOpNode,
@@ -41,7 +42,7 @@ def fold(expr):
     """Evaluate a constant integer expression, or return None."""
     if isinstance(expr, LiteralNode) and expr.literal_type == "int":
         try:
-            return int(expr.value)
+            return parse_c_int_literal(expr.value)
         except (TypeError, ValueError):
             return None
 

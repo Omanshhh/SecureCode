@@ -101,8 +101,13 @@ class RuleEngine:
             tokens = Lexer(source).tokenize()
             result["tokens"] = tokens
 
-            ast = Parser(tokens).parse()
+            parser = Parser(tokens)
+            ast = parser.parse()
             result["ast"] = ast
+            if parser.has_errors():
+                messages = [f"ParserError: {e}" for e in parser.get_errors()]
+                result["error"] = "; ".join(messages)
+                return result
         except (LexerError, ParserError) as exc:
             result["error"] = f"{type(exc).__name__}: {exc}"
             return result

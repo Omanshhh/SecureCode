@@ -84,14 +84,16 @@ class TestParser(unittest.TestCase):
         print('Array declaration/access AST:', repr(ast))
 
     def test_malformed_input(self):
-        src = "int x = ;"  # missing initializer expression
+        src = "int x = ;"
         lexer = Lexer(src)
         tokens = lexer.tokenize()
         parser = Parser(tokens)
-        with self.assertRaises(ParserError) as ctx:
-            parser.parse()
-        self.assertIn('Unexpected token', str(ctx.exception))
-        print('Malformed input error:', ctx.exception)
+        ast = parser.parse()
+        self.assertTrue(parser.has_errors())
+        errors = parser.get_errors()
+        self.assertEqual(len(errors), 1)
+        self.assertIn('Unexpected token', str(errors[0]))
+        print('Malformed input error:', errors[0])
 
 if __name__ == '__main__':
     unittest.main()
