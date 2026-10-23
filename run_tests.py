@@ -107,8 +107,8 @@ def main(argv):
 
     print("-" * 86)
     rate = (100.0 * total_detected / total_expected) if total_expected else 100.0
-    print(f"{passed}/{len(cases)} files passed  ·  detection {total_detected}/{total_expected} "
-          f"({rate:.0f}%)  ·  {false_positives} false positive(s)")
+    print(f"{passed}/{len(cases)} files passed  |  detection {total_detected}/{total_expected} "
+          f"({rate:.0f}%)  |  {false_positives} false positive(s)")
 
     return 0 if passed == len(cases) else 1
 

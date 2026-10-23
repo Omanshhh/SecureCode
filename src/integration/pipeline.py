@@ -172,7 +172,7 @@ def _node_detail(data):
     for stmt in data.get("statements") or []:
         kind = type(stmt).__name__.replace("Node", "")
         line = getattr(stmt, "line", None)
-        parts.append(f"{kind} · line {line}" if line else kind)
+        parts.append(f"{kind} | line {line}" if line else kind)
     return "; ".join(parts)
 
 
